@@ -2,7 +2,7 @@ import argparse
 import math
 import random
 import sys
-import runpy
+import pathlib
 import string
 
 try:
@@ -115,7 +115,7 @@ class Dice:
         
     def __str__(self):
         d_type, take = gettype(self.d_id)
-        return '%s die number %s (ID: %s)' % (d_type, self.d_id - take, self.d_id)
+        return f'{d_type} die number {self.d_id - take} (ID: {self.d_id})'
 
 class Shop:
     def __init__(self, action=None):
@@ -249,9 +249,10 @@ class Player:
         self.b_rolls = 1
         self.turn = 0
         try:
+            modname = pathlib.Path(bot).resolve().stem
             if modname in sys.modules:
-                del sys.modules[modname]
-            botmod = runpy.run_path(bot)
+                sys.modules[modname]
+            botmod = __import__(pathlib.Path(bot).resolve().stem)
             for i in vars(botmod).values():
                 if isinstance(i, type) and issubclass(i, Bot) and i is not Bot:
                     self.bot = i(random, index)
@@ -286,7 +287,7 @@ class Player:
         return None
 
     def __str__(self):
-        return '%s (%s)' % (self.name, type(self.bot).__name__)
+        return f'{self.name} ({type(self.bot).__name__})'
 
 
 class Game:
@@ -300,14 +301,14 @@ class Game:
         self.bots = []
         n = 0
         for i in bots:
-            print('Loading from ' + i + '...')
+            print(f'Loading from {i}...')
             p = Player(i, self.getrandom(), n, self.getname())
             if p.alive:
                 self.bots.append(p)
-                print('Succesfully loaded %s from %s.' % (p, i))
+                print(f'Succesfully loaded {p} from {i}.')
             else:
                 self.bots.append(None)
-                print('The bot from %s (%s) was unavailable to play today' % (i, p.name))
+                print(f'The bot from {i} ({p.name}) was unavailable to play today')
             n += 1
         self.main()
 
@@ -330,13 +331,13 @@ class Game:
         actions = {}
         for i in self.bots:
             if i.alive:
-                print('Getting action from ' + i + '...')
+                print(f'Getting action from {i}...')
                 action = i.get_action(money, dice, self.shop.asdict(), self.turn)
                 actions[i.index] = action
                 if not action:
-                    print(i + ' was called away for an urgent meeting')
+                    print(f'{i} was called away for an urgent meeting')
                 else:
-                    print(i + ' ordered:')
+                    print(f'{i} ordered:')
                     print(Shop(action))
         return actions
 
@@ -353,13 +354,13 @@ class Game:
                         wanted[d_id] = 0
                     wanted[d_id] += order[d_id]
             else:
-                print(bot + ' spent to much!', file=sys.stderr)
-                print(bot + ' was called away for an urgent meeting')
+                print(f'{bot} spent to much!', file=sys.stderr)
+                print(f'{bot} was called away for an urgent meeting')
                 bot.alive = False
         blocked = []
         for d_id in wanted:
             if wanted[d_id] > self.shop.asdict()[d_id]:
-                print('There are not enough of %s! No one will have any.' % Dice(d_id))
+                print(f'There are not enough of {Dice(d_id)}! No one will have any.')
                 blocked.append(d_id)
         for n in orders:
             order = orders[n]
@@ -435,7 +436,7 @@ class Game:
         return random.Random(random.getrandbits(600))
 
     def getname(self):
-        return self.firstnames.pop() + ' ' + self.lastnames.pop()
+        return f'{self.firstnames.pop()} {self.lastnames.pop()}'
 
     def over(self):
         print(tabulate([(str(bot), bot.money) for i in self.bots],
