@@ -3,6 +3,7 @@ import math
 import random
 import sys
 import pathlib
+import string
 
 try:
     import requests
@@ -48,6 +49,10 @@ LAST_NAMES = ['Fowl', 'Short', 'Root', 'Butler', 'Frond', 'Paradizo',
               'McGuire', 'Scalene', 'Schweem', 'Jnr.', 'Snr.', 'I', 'II',
               'Sool', 'Vinyáya', 'Vassikin', 'Zito']
 
+def get_seed():
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.sample(chars, 6))
+
 DICE = {0: (20, 1),
         1: (20, 5),
         2: (20, 9),
@@ -68,7 +73,7 @@ DICE = {0: (20, 1),
         17: (3, 90),
         18: (3, 110),
         19: (3, 120),
-        20: (3, 170))
+        20: (3, 170)}
 
 def gettype(d_id):
     if d_id < 7:
@@ -86,20 +91,18 @@ class DiceType:
         self.d_id = d_id
         self.available = available
         self.price = price
-        self.d_class = gettype(d_id)
+        self.d_class = gettype(d_id)[0]
 
     def new(self):
-        if self.available:
-            self.availabe -= 1
-            if self.d_class == 'basic':
-                return Basic(self.d_id)
-            elif self.d_class == 'multiplier':
-                return Mult(seld.d_id)
-            elif self.d_class == 'attack':
-                return Attack(self.d_id)
-            else:
-                return Coin(self.d_id)
-        return None
+        self.available -= 1
+        if self.d_class == 'basic':
+            return Basic(self.d_id)
+        elif self.d_class == 'multiplier':
+            return Mult(seld.d_id)
+        elif self.d_class == 'attack':
+            return Attack(self.d_id)
+        else:
+            return Coin(self.d_id)
 
     def __str__(self):
         self.available += 1
@@ -116,16 +119,18 @@ class Dice:
 
 class Shop:
     def __init__(self, action=None):
-        self.dice = {}
-        for i in DICE:
-            self.dice[i] = DiceType(i, DICE[i][0], DICE[i][1])
-        self.dice = action or self.dice
+        if action:
+            self.dice = {}
+            for i in action:
+                self.dice[i] = DiceType(i, action[i])
+        else:
+            self.dice = {}
+            for i in DICE:
+                self.dice[i] = DiceType(i, DICE[i][0], DICE[i][1])
 
     def buy(self, d_id, this):
-        if this.money < self.dice[d_id].price:
-            return None
         this.money -= self.dice[d_id].price
-        return self.dice[d_id].new()
+        this.dice.append(self.dice[d_id].new())
 
     def available(self, d_id):
         return self.dice[d_id].available
@@ -133,10 +138,10 @@ class Shop:
     def __str__(self):
         return  '\n'.join(str(self.dice[i]) for i in self.dice)
 
-    def __dict__(self):
+    def asdict(self):
         ret = {}
         for i in self.dice:
-            ret[i] = i.available
+            ret[i] = self.dice[i].available
         return ret
 
 
@@ -145,44 +150,46 @@ class Basic(Dice):
     unlilkely = ([22] * 3) + ([11] * 3)
     equal = [1] * 6
 
-    def getval(self, random):
+    def choose(self, weights, random):
         pool = []
         for i in range(len(weights)):
             pool += [i+1] * weights[i]
-        r = random.choice(pool)
+        return random.choice(pool)
+
+    def action(self, random, this):
         if self.d_id == 0:
-            self.getval = lambda r: 1
+            this.turn += 1
         elif self.d_id == 1:
-            self.getval = lambda r: self.choose(Basic.likely, r)
+            this.turn += self.choose(Basic.likely, random)
         elif self.d_id == 2:
-            self.getval = lambda r: self.choose(Basic.unlikely, r)
+            this.turn += self.choose(Basic.unlikely, random)
         elif self.d_id == 3:
-            self.getval = lambda r: self.choose(Basic.equal, r)
+            this.turn += self.choose(Basic.equal, random)
         elif self.d_id == 4:
-            self.getval = lambda r: self.choose(reversed(Basic.unlikely), r)
+            this.turn += self.choose(reversed(Basic.unlikely), random)
         elif self.d_id == 5:
-            self.getval = lambda r: self.choose(reversed(Basic.likely), r)
-        elif self.d_id == 6:
-            self.getval = lambda r: 6
+            this.turn += self.choose(reversed(Basic.likely), random)
+        else:
+            this.turn += 6
 
 
 class Mult(Dice):
-    def getval(self, random):
+    def action(self, random, this):
         r = random.randint(1, 6)
         if self.d_id == 7:
-            return r/3
+            this.turn *= r//3
         elif self.d_id == 8:
-            return r/2
+            this.turn *= r//2
         elif self.d_id == 9:
-            return r
+            this.turn *= r
         elif self.d_id == 10:
-            return r*2
+            this.turn *= r*2
         elif self.d_id == 11:
-            return r*3
+            this.turn *= r*3
 
         
 class Attack(Dice):
-    def action(self, random, others, this):
+    def action(self, random, this, others):
         p = random.choice(others)
         if p.shield:
             return
@@ -194,7 +201,7 @@ class Attack(Dice):
         elif self.d_id == 14:
             p.turn = 0
         elif self.d_id == 15:
-            this.turn = p.turn
+            this.turn += p.turn
             p.turn = 0
 
 
@@ -224,18 +231,27 @@ class Bot:
     def prepare(self):
         pass
 
-    def get_action(self, money, dice, shop):
+    def get_action(self, money, dice, shop, turn):
         raise NotImplemented('This bot has no get_action method!')
         return None
 
 
-class Player: ###'this'
+class Player:
     def __init__(self, bot, random, index, name):
         self.name = name
         self.money = 5
         self.dice = []
         self.index = index
+        self.shield = False
+        self.square = False
+        self.cube = False
+        self.m_rolls = 1
+        self.b_rolls = 1
+        self.turn = 0
         try:
+            modname = pathlib.Path(bot).resolve().stem
+            if modname in sys.modules:
+                sys.modules[modname]
             botmod = __import__(pathlib.Path(bot).resolve().stem)
             for i in vars(botmod).values():
                 if isinstance(i, type) and issubclass(i, Bot) and i is not Bot:
@@ -249,9 +265,18 @@ class Player: ###'this'
         else:
             self.alive = True
 
-    def get_action(self, money, dice, shop):
+    def reset(self):
+        self.shield = False
+        self.square = False
+        self.cube = False
+        self.m_rolls = 1
+        self.b_rolls = 1
+        self.money += self.turn
+        self.turn = 0
+
+    def get_action(self, money, dice, shop, turn):
         try:
-            action = self.bot.get_action(money, dice, shop)
+            action = self.bot.get_action(money, dice, shop, turn)
         except Exception as a:
             print('Error on get_action:', file=sys.stderr)
             print(e, file=sys.stderr)
@@ -262,7 +287,7 @@ class Player: ###'this'
         return None
 
     def __str__(self):
-        return f'{self.name} ({type(self.bot)})'
+        return f'{self.name} ({type(self.bot).__name__})'
 
 
 class Game:
@@ -272,7 +297,8 @@ class Game:
         self.lastnames = LAST_NAMES[:]
         self.random.shuffle(self.firstnames)
         self.random.shuffle(self.lastnames)
-        self.bots = {}
+        self.shop = Shop()
+        self.bots = []
         n = 0
         for i in bots:
             print(f'Loading from {i}...')
@@ -284,12 +310,20 @@ class Game:
                 self.bots.append(None)
                 print(f'The bot from {i} ({p.name}) was unavailable to play today')
             n += 1
+        self.main()
+
+    def main(self):
         self.turn = 1
         while (self.turn <= 500 and
-               max(i.points for i in self.bots).points - 200 <
-               min(i.points for i in self.bots).points):
+               max(i.money for i in self.bots) - 200 <
+               min(i.money for i in self.bots)):
             self.buy(self.get_actions())
             self.roll()
+            self.turn += 1
+        for bot in self.bots:
+            if bot.alive:
+                bot.reset()
+        self.over()
                         
     def get_actions(self):
         money = self.get_money()
@@ -298,8 +332,8 @@ class Game:
         for i in self.bots:
             if i.alive:
                 print(f'Getting action from {i}...')
-                action = i.get_action(money, dice, dict(self.shop))
-                actions[i.index] == action
+                action = i.get_action(money, dice, self.shop.asdict(), self.turn)
+                actions[i.index] = action
                 if not action:
                     print(f'{i} was called away for an urgent meeting')
                 else:
@@ -313,7 +347,7 @@ class Game:
         for n in actions:
             order = actions[n]
             bot = self.bots[n]
-            if sum(map(lambda x: dice[x] * order[x], order)) <= self.bots[n].money:
+            if sum(map(lambda x: DICE[x][1] * order[x], order)) <= self.bots[n].money:
                 orders[n] = order
                 for d_id in order:
                     if d_id not in wanted:
@@ -325,14 +359,60 @@ class Game:
                 bot.alive = False
         blocked = []
         for d_id in wanted:
-            if wanted[d_id] > dict(self.shop)[d_id]:
+            if wanted[d_id] > self.shop.asdict()[d_id]:
                 print(f'There are not enough of {Dice(d_id)}! No one will have any.')
                 blocked.append(d_id)
         for n in orders:
             order = orders[n]
             bot = self.bots[n]
-            ###WIP
-                
+            for d_id in order:
+                for _ in range(order[d_id]):
+                    self.shop.buy(d_id, bot)
+
+    def roll(self):
+        basic = {}
+        mults = {}
+        attks = {}
+        coins = {}
+        for bot in self.bots:
+            if bot.alive:
+                bot.reset()
+                for l in (basic, mults, attks, coins):
+                    l[bot.index] = []
+                for die in bot.dice:
+                    if isinstance(die, Basic):
+                        basic[bot.index].append(die)
+                    elif isinstance(die, Mult):
+                        mults[bot.index].append(die)
+                    elif isinstance(die, Attack):
+                        attks[bot.index].append(die)
+                    else:
+                        coins[bot.index].append(die)
+        for n in coins:
+            bot = self.bots[n]
+            owns = coins[n]
+            for coin in owns:
+                coin.action(self.random, bot)
+        for n in basic:
+            bot = self.bots[n]
+            owns = basic[n]
+            while bot.b_rolls:
+                bot.b_rolls -= 1
+                for die in owns:
+                    die.action(self.random, bot)
+        for n in mults:
+            bot = self.bots[n]
+            owns = mults[n]
+            while bot.m_rolls:
+                bot.m_rolls -= 1
+                for die in owns:
+                    die.action(self.random, bot)
+        for n in attks:
+            bot = self.bots[n]
+            owns = mults[n]
+            others = [i for i in self.bots if i != bot]
+            for die in owns:
+                die.action(self.random, bot, others)
 
     def get_money(self):
         ret = []
@@ -356,4 +436,13 @@ class Game:
         return random.Random(random.getrandbits(600))
 
     def getname(self):
-        return f'{self.fistnames.pop()} {self.lastnames.pop()}'
+        return f'{self.firstnames.pop()} {self.lastnames.pop()}'
+
+    def over(self):
+        print(tabulate([(str(bot), bot.money) for i in self.bots],
+                       ['Name', 'Money']))
+
+
+bots = ['dice_bots/spend_half_on_zeroes.py']
+seed = get_seed()
+Game(bots, seed)
