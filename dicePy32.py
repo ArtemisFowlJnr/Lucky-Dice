@@ -5,6 +5,9 @@ import sys
 import runpy
 import string
 
+#print_ = print
+#def print(*_, **__):pass
+
 try:
     import requests
     from lxml import html
@@ -249,10 +252,8 @@ class Player:
         self.b_rolls = 1
         self.turn = 0
         try:
-            if modname in sys.modules:
-                del sys.modules[modname]
             botmod = runpy.run_path(bot)
-            for i in vars(botmod).values():
+            for i in botmod.values():
                 if isinstance(i, type) and issubclass(i, Bot) and i is not Bot:
                     self.bot = i(random, index)
                     break
@@ -265,6 +266,10 @@ class Player:
             self.alive = True
 
     def reset(self):
+        if self.square:
+            self.turn **= 2
+        if self.cube:
+            self.turn **= 3
         self.shield = False
         self.square = False
         self.cube = False
@@ -313,7 +318,7 @@ class Game:
 
     def main(self):
         self.turn = 1
-        while (self.turn <= 500 and
+        while (self.turn <= 100 and
                max(i.money for i in self.bots) - 200 <
                min(i.money for i in self.bots)):
             self.buy(self.get_actions())
@@ -330,13 +335,13 @@ class Game:
         actions = {}
         for i in self.bots:
             if i.alive:
-                print('Getting action from ' + i + '...')
+                print('Getting action from %s...' % i)
                 action = i.get_action(money, dice, self.shop.asdict(), self.turn)
                 actions[i.index] = action
                 if not action:
-                    print(i + ' was called away for an urgent meeting')
+                    print('%s was called away for an urgent meeting' % i)
                 else:
-                    print(i + ' ordered:')
+                    print('%s ordered:' % i)
                     print(Shop(action))
         return actions
 
@@ -353,8 +358,8 @@ class Game:
                         wanted[d_id] = 0
                     wanted[d_id] += order[d_id]
             else:
-                print(bot + ' spent to much!', file=sys.stderr)
-                print(bot + ' was called away for an urgent meeting')
+                print('%s spent to much!' % bot, file=sys.stderr)
+                print('%s was called away for an urgent meeting'  % bot)
                 bot.alive = False
         blocked = []
         for d_id in wanted:
@@ -365,8 +370,9 @@ class Game:
             order = orders[n]
             bot = self.bots[n]
             for d_id in order:
-                for _ in range(order[d_id]):
-                    self.shop.buy(d_id, bot)
+                if d_id not in blocked:
+                    for _ in range(order[d_id]):
+                        self.shop.buy(d_id, bot)
 
     def roll(self):
         basic = {}
@@ -438,10 +444,10 @@ class Game:
         return self.firstnames.pop() + ' ' + self.lastnames.pop()
 
     def over(self):
-        print(tabulate([(str(bot), bot.money) for i in self.bots],
+        print(tabulate([(str(bot), bot.money) for bot in self.bots],
                        ['Name', 'Money']))
 
 
-bots = ['dice_bots/spend_half_on_zeroes.py']
+bots = ['dice_bots/spendhalfonzeroes.py']
 seed = get_seed()
 Game(bots, seed)
